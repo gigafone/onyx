@@ -10,10 +10,15 @@
 
 (s/defmethod extensions/apply-log-entry :notify-join-cluster :- Replica
   [{:keys [args]} :- LogEntry replica]
-  (let [prepared (get (map-invert (:prepared replica)) (:observer args))]
-    (-> replica
-        (update-in [:accepted] merge {prepared (:observer args)})
-        (update-in [:prepared] dissoc prepared))))
+  (let [prepared (get (map-invert (:prepared replica)) (:observer args))
+        already-joined? (some #{(:observer args)} (:peers replica))]
+    (if-not already-joined?
+      (-> replica
+          (update-in [:accepted] merge {prepared (:observer args)})
+          (update-in [:prepared] dissoc prepared))
+      (do
+        (info "Eek, already joined")
+        replica))))
 
 (s/defmethod extensions/replica-diff :notify-join-cluster :- ReplicaDiff
   [entry old new]
@@ -31,6 +36,8 @@
              (= (:id peer-args) (:observer diff)))
         [{:fn :accept-join-cluster
           :args diff}]
+        (nil? diff)
+        []
         (= (:id peer-args) (:observer (:args entry)))
         [{:fn :abort-join-cluster
           :args {:id (:observer (:args entry))}}]))
@@ -38,6 +45,8 @@
 (s/defmethod extensions/fire-side-effects! :notify-join-cluster :- State
   [{:keys [args]} old new diff {:keys [monitoring] :as state}]
   (if (= (:id state) (:observer diff))
+    ;; TODO; shouldn't setup monitoring if nothing changed.
+    ;; Otherwise we get nil leave clusters
     (let [ch (chan 1)]
       (extensions/emit monitoring {:event :peer-notify-join :id (:id state)})
       (extensions/on-delete (:log state) (:subject diff) ch)
