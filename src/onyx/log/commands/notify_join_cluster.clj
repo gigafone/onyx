@@ -31,12 +31,14 @@
        :accepted-joiner (first (vals rets))})))
 
 (s/defmethod extensions/reactions :notify-join-cluster :- Reactions
-  [entry old new diff peer-args]
-  (cond (and (= (vals diff) (remove nil? (vals diff)))
-             (= (:id peer-args) (:observer diff)))
+  [{:keys [args]} :- LogEntry old new diff peer-args]
+  (cond (and diff (= (:id peer-args) (:observer diff)))
         [{:fn :accept-join-cluster
           :args diff}]
-        (nil? diff)
+        ;; Really should be if it's nil and already joined?
+        (and (nil? diff)
+             ;; already joined
+            (some #{(:observer args)} (:peers old)))
         []
         (= (:id peer-args) (:observer (:args entry)))
         [{:fn :abort-join-cluster
