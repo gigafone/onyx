@@ -8,11 +8,15 @@
             [clojure.data :refer [diff]]
             [onyx.extensions :as extensions]))
 
+(defn already-joined? [replica entry]
+  (boolean (get (set (:peers replica)) 
+                (:observer (:args entry)))))
+
 (s/defmethod extensions/apply-log-entry :notify-join-cluster :- Replica
   [{:keys [args] :as entry} :- LogEntry replica]
   (let [prepared (get (map-invert (:prepared replica)) (:observer args))]
     (assert (not= prepared (:observer args)))
-    (if prepared 
+    (if (and prepared (not (already-joined? replica entry)))  
       (-> replica
           (update-in [:accepted] merge {prepared (:observer args)})
           (update-in [:prepared] dissoc prepared))
@@ -30,17 +34,14 @@
 
 (s/defmethod extensions/reactions :notify-join-cluster :- Reactions
   [entry old new diff peer-args]
-  (cond (and (= (vals diff) (remove nil? (vals diff)))
-             (= (:id peer-args) (:observer diff)))
-        [{:fn :accept-join-cluster
-          :args diff}]
-        (get (set (:peers old)) (:observer (:args entry)))
-        (do
-          ;(info "Do nothing" entry new)
-          [])
-        (= (:id peer-args) (:observer (:args entry)))
-        (do
-          ;(info "aborrrrrt " entry new)
+  (let [success? (and (= (vals diff) (remove nil? (vals diff)))
+                      (= (:id peer-args) (:observer diff)))] 
+    (cond success?
+          [{:fn :accept-join-cluster 
+            :args diff}]
+          (already-joined? old entry)
+          []
+          (= (:id peer-args) (:observer (:args entry)))
           [{:fn :abort-join-cluster
             :args {:id (:observer (:args entry))}}])))
 
