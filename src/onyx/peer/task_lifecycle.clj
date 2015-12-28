@@ -404,7 +404,7 @@
           (:onyx.core/triggers event)))
 
 (defn handle-exception [log restart-pred-fn e restart-ch outbox-ch job-id]
-  (warn e "Uncaught exception throw inside task lifecycle.")
+  (warn e "Handling uncaught exception thrown inside task lifecycle.")
   (if (restart-pred-fn e)
     (>!! restart-ch true)
     (let [entry (entry/create-log-entry :kill-job {:job job-id})]
